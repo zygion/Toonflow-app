@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RH REST API — Test UI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+  h1, h2, h3 { color: #f1f5f9; margin-bottom: 1rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid #2d3748; padding-bottom: 0.5rem; }
+
+  .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 800px; }
+  .card label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.3rem; }
+  .card input, .card select, .card textarea { width: 100%; background: #0f1117; border: 1px solid #2d3748; border-radius: 4px; color: #e2e8f0; padding: 0.5rem 0.75rem; font-size: 0.9rem; outline: none; }
+  .card input:focus, .card select:focus, .card textarea:focus { border-color: #6366f1; }
+  .card textarea { resize: vertical; min-height: 80px; font-family: monospace; }
+  .card .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .card button { background: #6366f1; color: #fff; border: none; border-radius: 4px; padding: 0.6rem 1.2rem; font-size: 0.9rem; cursor: pointer; }
+  .card button:hover { background: #4f46e5; }
+  .card button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .card button.danger { background: #ef4444; }
+  .card button.danger:hover { background: #dc2626; }
+  .card button.secondary { background: #475569; }
+  .card button.secondary:hover { background: #334155; }
+  .card button.save { background: #10b981; }
+  .card button.save:hover { background: #059669; }
+  .card button.refresh { background: transparent; border: 1px solid #6366f1; color: #6366f1; }
+  .card button.refresh:hover { background: #6366f1; color: #fff; }
+  .msg { font-size: 0.8rem; margin-top: 0.5rem; }
+  .msg.ok { color: #10b981; }
+  .msg.err { color: #ef4444; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: #94a3b8; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2d3748; }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1f2937; }
+  tr:hover td { background: #1f2937; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+  .badge.PENDING  { background: #1e3a5f; color: #60a5fa; }
+  .badge.QUEUED   { background: #3b2e00; color: #fbbf24; }
+  .badge.RUNNING  { background: #1e3a5f; color: #60a5fa; }
+  .badge.SUCCESS  { background: #14532d; color: #4ade80; }
+  .badge.FAILED   { background: #7f1d1d; color: #f87171; }
+  .badge.DONE     { background: #312e81; color: #a5b4fc; }
+  .outputs { font-size: 0.75rem; color: #94a3b8; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .error { color: #f87171; font-size: 0.8rem; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #6366f1; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #node-mapping-builder { margin-top: 0.75rem; }
+  .nm-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
+  .nm-row input { margin-bottom: 0; }
+  .nm-row button { padding: 0.4rem 0.6rem; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<h1>🤖 RH REST API — Test UI</h1>
+<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:2rem;">Base URL: <span id="base-url"></span></p>
+
+<!-- ── Models ─────────────────────────────────────────────── -->
+<h2>Models</h2>
+
+<div class="card">
+  <h3>Create / Update Model</h3>
+  <form id="model-form">
+    <div class="row">
+      <div>
+        <label>Model Name</label>
+        <input id="m-name" placeholder="e.g. cat-generator" required>
+      </div>
+      <div>
+        <label>Workflow ID</label>
+        <input id="m-workflow-id" placeholder="e.g. wf-abc123" required>
+      </div>
+    </div>
+    <div style="margin-top:0.75rem;">
+      <label>Type</label>
+      <select id="m-type">
+        <option value="t2i">Text-to-Image (t2i)</option>
+        <option value="i2i">Image-to-Image (i2i)</option>
+        <option value="t2v">Text-to-Video (t2v)</option>
+        <option value="v2v">Video-to-Video (v2v)</option>
+      </select>
+    </div>
+    <div style="margin-top:0.75rem;">
+      <label>Node Mapping</label>
+      <div id="node-mapping-builder">
+<div class="nm-row" style="margin-bottom:0.5rem;">
+          <input placeholder="Node ID (e.g. 2)" class="nm-node-id">
+          <input placeholder="Input name (e.g. prompt)" class="nm-name">
+          <button type="button" class="secondary" onclick="addNmRow()">+</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:1rem;">
+      <button type="submit" class="save">💾 Save Model</button>
+      <span id="model-msg" class="msg"></span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <h3>Available Models</h3>
+    <button class="refresh" onclick="loadModels()">↻ Refresh</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Workflow ID</th>
+        <th>Type</th>
+        <th>Node Mapping</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="models-tbody"></tbody>
+  </table>
+  <p id="models-empty" style="color:#94a3b8;font-size:0.85rem;margin-top:0.75rem;display:none;">No models yet. Create one above.</p>
+</div>
+
+<!-- ── Tasks ─────────────────────────────────────────────── -->
+<h2>Tasks</h2>
+
+<div class="card">
+  <h3>Create Task</h3>
+  <form id="task-form">
+    <div class="row">
+      <div>
+        <label>Model Name</label>
+        <select id="t-model"></select>
+      </div>
+      <div>
+        <label>Inputs (JSON)</label>
+        <textarea id="t-inputs" placeholder='{"prompt": "a cat", "image": "https://..."}'>{}</textarea>
+      </div>
+    </div>
+    <div style="margin-top:1rem;">
+      <button type="submit" class="save">🚀 Run Task</button>
+      <span id="task-msg" class="msg"></span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+    <h3>Tasks</h3>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <select id="filter-status" style="width:auto;" onchange="loadTasks()">
+        <option value="">All statuses</option>
+        <option value="PENDING">PENDING</option>
+        <option value="QUEUED">QUEUED</option>
+        <option value="RUNNING">RUNNING</option>
+        <option value="SUCCESS">SUCCESS</option>
+        <option value="FAILED">FAILED</option>
+        <option value="DONE">DONE</option>
+      </select>
+      <button class="refresh" onclick="loadTasks()">↻ Refresh</button>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Status</th>
+        <th>Workflow ID</th>
+        <th>Inputs</th>
+        <th>Outputs</th>
+        <th>Error</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody id="tasks-tbody"></tbody>
+  </table>
+  <p id="tasks-empty" style="color:#94a3b8;font-size:0.85rem;margin-top:0.75rem;display:none;">No tasks yet. Create one above.</p>
+</div>
+
+<script>
+const BASE = window.location.origin;
+
+// ── Utilities ────────────────────────────────────────────
+function $(id) { return document.getElementById(id); }
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(BASE + path, opts);
+  const text = await r.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = text; }
+  if (!r.ok) throw Object.assign(new Error(JSON.stringify(json)), { status: r.status });
+  return json;
+}
+function msg(el, txt, ok) {
+  el.textContent = txt;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+  setTimeout(() => { el.textContent = ''; el.className = 'msg'; }, 4000);
+}
+
+// ── Node mapping builder ──────────────────────────────────
+function addNmRow(nodeId, name) {
+  const builder = $('node-mapping-builder');
+  const row = document.createElement('div');
+  row.className = 'nm-row';
+  row.innerHTML = `
+    <input placeholder="Node ID (e.g. 2)" class="nm-node-id" value="${nodeId || ''}">
+    <input placeholder="Input name (e.g. prompt)" class="nm-name" value="${name || ''}">
+    <button type="button" class="danger" onclick="this.parentElement.remove()">✕</button>`;
+  builder.appendChild(row);
+}
+function getNodeMapping() {
+  const rows = document.querySelectorAll('.nm-row');
+  const mapping = {};
+  rows.forEach(row => {
+    const nodeId = row.querySelector('.nm-node-id').value.trim();
+    const name = row.querySelector('.nm-name').value.trim();
+    if (nodeId && name) mapping[nodeId] = { name };
+  });
+  return mapping;
+}
+function setNodeMapping(mapping) {
+  $('node-mapping-builder').innerHTML = '';
+  Object.entries(mapping).forEach(([nodeId, spec]) => addNmRow(nodeId, spec.name));
+  if (Object.keys(mapping).length === 0) addNmRow();
+}
+
+// ── Models ────────────────────────────────────────────────
+async function loadModels() {
+  try {
+    const models = await api('GET', '/models');
+    const tbody = $('models-tbody');
+    const empty = $('models-empty');
+    if (!models.length) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = models.map(m => `
+      <tr>
+        <td><code>${m.name}</code></td>
+        <td><code style="font-size:0.8rem">${m.workflow_id}</code></td>
+        <td><span class="badge" style="background:#1e3a5f;color:#60a5fa">${m.type}</span></td>
+        <td><code style="font-size:0.75rem">${JSON.stringify(m.node_mapping)}</code></td>
+        <td>
+          <button class="secondary" style="padding:0.3rem 0.6rem;font-size:0.75rem" onclick="fillModelForm('${m.name}')">Edit</button>
+          <button class="danger" style="padding:0.3rem 0.6rem;font-size:0.75rem" onclick="deleteModel('${m.name}')">Delete</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function fillModelForm(name) {
+  const models = document.querySelectorAll('#models-tbody tr');
+  // find the row and reload full data
+  api('GET', `/models/${name}`).then(m => {
+    $('m-name').value = m.name;
+    $('m-name').disabled = true;
+    $('m-workflow-id').value = m.workflow_id;
+    $('m-type').value = m.type;
+    setNodeMapping(m.node_mapping);
+  }).catch(console.error);
+}
+
+async function deleteModel(name) {
+  if (!confirm(`Delete model "${name}"?`)) return;
+  try {
+    await api('DELETE', `/models/${name}`);
+    loadModels();
+    loadTasks();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+$('model-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgEl = $('model-msg');
+  const name = $('m-name').value.trim();
+  const workflowId = $('m-workflow-id').value.trim();
+  const type = $('m-type').value;
+  const nodeMapping = getNodeMapping();
+
+  if (!name || !workflowId) { msg(msgEl, 'Name and Workflow ID are required', false); return; }
+  if (!Object.keys(nodeMapping).length) { msg(msgEl, 'At least one node mapping entry is required', false); return; }
+
+  try {
+    await api('POST', '/models', { workflowId, name, type, nodeMapping });
+    msg(msgEl, `Model "${name}" saved!`, true);
+    $('m-name').disabled = false;
+    $('m-name').value = '';
+    $('m-workflow-id').value = '';
+    setNodeMapping({});
+    loadModels();
+    populateModelSelect();
+  } catch (e) {
+    msg(msgEl, 'Error: ' + e.message, false);
+  }
+});
+
+// ── Tasks ────────────────────────────────────────────────
+async function loadTasks() {
+  try {
+    const status = $('filter-status').value;
+    const path = status ? `/tasks?status=${status}` : '/tasks';
+    const tasks = await api('GET', path);
+    const tbody = $('tasks-tbody');
+    const empty = $('tasks-empty');
+    if (!tasks.length) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = tasks.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td><span class="badge ${t.status}">${t.status}</span></td>
+        <td><code style="font-size:0.75rem">${t.workflow_id}</code></td>
+        <td><code style="font-size:0.75rem">${JSON.stringify(t.inputs)}</code></td>
+        <td class="outputs">${t.outputs ? JSON.stringify(t.outputs) : '—'}</td>
+        <td class="error">${t.error_msg || ''}</td>
+        <td style="font-size:0.75rem;color:#94a3b8">${new Date(t.created_at).toLocaleString()}</td>
+      </tr>`).join('');
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function populateModelSelect() {
+  try {
+    const models = await api('GET', '/models');
+    const sel = $('t-model');
+    sel.innerHTML = models.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+$('task-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const msgEl = $('task-msg');
+  const model = $('t-model').value;
+  let inputs;
+  try {
+    inputs = JSON.parse($('t-inputs').value);
+  } catch {
+    msg(msgEl, 'Invalid JSON in inputs', false);
+    return;
+  }
+
+  try {
+    const task = await api('POST', '/tasks', { model, inputs });
+    msg(msgEl, `Task #${task.id} created!`, true);
+    $('t-inputs').value = '{}';
+    loadTasks();
+  } catch (e) {
+    msg(msgEl, 'Error: ' + e.message, false);
+  }
+});
+
+// ── Init ─────────────────────────────────────────────────
+$('base-url').textContent = BASE;
+addNmRow();  // start with one empty row
+loadModels();
+populateModelSelect();
+loadTasks();
+
+// Auto-refresh tasks every 5s
+setInterval(loadTasks, 5000);
+</script>
+</body>
+</html>

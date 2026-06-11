@@ -47,6 +47,18 @@ web/*
 
 *.sqlite
 
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+rh-rest-api/.env
+
+# Virtual environments (uv / venv / virtualenv / conda)
+.venv/
+venv/
+env/
+virtualenv/
+
 router.ts
 
 database.d.ts
