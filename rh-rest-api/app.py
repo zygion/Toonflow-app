@@ -25,7 +25,7 @@ import logging
 import threading
 from contextlib import asynccontextmanager
 
-from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,17 @@ log = logging.getLogger("api")
 
 class NodeMappingEntry(BaseModel):
     name: str
+    # Semantic type — tells Toonflow vendor how to fill this field.
+    #   "prompt"      -> The main text prompt
+    #   "negative"    -> Negative prompt
+    #   "image"       -> Single reference image (i2i / i2v first frame)
+    #   "firstFrame"  -> Video first frame
+    #   "lastFrame"   -> Video last frame
+    #   "multiImage"  -> Comma-joined base64s of multiple reference images
+    #   "video"       -> Reference video
+    #   "audio"       -> Reference audio
+    #   "other"       -> Anything else; pass-through scalar
+    kind: str = "other"
 
 
 class ModelRequest(BaseModel):
@@ -176,11 +187,13 @@ async def create_or_update_model(req: ModelRequest):
     """Create a new model or update an existing one by name."""
     db_path = _app_cfg.db_path if _app_cfg else _default_db_path
 
-    # Normalise nodeMapping: { nodeId: { name: "..." } }
+    # Normalise nodeMapping: { nodeId: { name: "...", kind: "..." } }
+    # `kind` is optional and defaults to "other" for backward-compat with old clients.
     normalised = {
-        node_id: {"name": entry.name}
+        node_id: {"name": entry.name, "kind": entry.kind or "other"}
         for node_id, entry in req.nodeMapping.items()
     }
+    print(f"[DEBUG] normalised nodeMapping: {normalised}")
 
     upsert_model(
         workflow_id=req.workflowId,
@@ -205,22 +218,28 @@ async def create_or_update_model(req: ModelRequest):
     )
 
 
+async def _model_response(m) -> ModelResponse:
+    """Build a ModelResponse and backfill missing `kind` for older rows."""
+    nm = m.node_mapping or {}
+    for spec in nm.values():
+        if isinstance(spec, dict) and "kind" not in spec:
+            spec["kind"] = "other"
+    return ModelResponse(
+        id=m.id,
+        workflow_id=m.workflow_id,
+        name=m.name,
+        type=m.type,
+        node_mapping=nm,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
 @app.get("/models", response_model=list[ModelResponse])
 async def list_all_models():
     db_path = _app_cfg.db_path if _app_cfg else _default_db_path
     models = list_models(db_path=db_path)
-    return [
-        ModelResponse(
-            id=m.id,
-            workflow_id=m.workflow_id,
-            name=m.name,
-            type=m.type,
-            node_mapping=m.node_mapping,
-            created_at=m.created_at,
-            updated_at=m.updated_at,
-        )
-        for m in models
-    ]
+    return [await _model_response(m) for m in models]
 
 
 @app.get("/models/{name}", response_model=ModelResponse)
@@ -229,15 +248,7 @@ async def get_model(name: str):
     model = get_model_by_name(name, db_path=db_path)
     if model is None:
         raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
-    return ModelResponse(
-        id=model.id,
-        workflow_id=model.workflow_id,
-        name=model.name,
-        type=model.type,
-        node_mapping=model.node_mapping,
-        created_at=model.created_at,
-        updated_at=model.updated_at,
-    )
+    return await _model_response(model)
 
 
 @app.delete("/models/{name}")

@@ -56,8 +56,10 @@
 
   /* ── Node mapping builder ── */
   #node-mapping-builder { margin-top: 0.6rem; }
-  .nm-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.4rem; align-items: center; margin-bottom: 0.35rem; }
-  .nm-row input { margin-bottom: 0; }
+  .nm-row { display: grid; grid-template-columns: 1fr 1.4fr 1.2fr auto; gap: 0.4rem; align-items: center; margin-bottom: 0.35rem; }
+  .nm-row input, .nm-row select { margin-bottom: 0; }
+  .nm-row select.nm-kind { background: #0f1117; border: 1px solid #2d3748; border-radius: 4px; color: #e2e8f0; padding: 0.45rem 0.6rem; font-size: 0.82rem; }
+  .nm-row select.nm-kind:focus { border-color: #6366f1; outline: none; }
   .nm-row button { padding: 0.35rem 0.55rem; font-size: 0.78rem; }
 
   /* ── Right panel: Workflow viewer ── */
@@ -131,10 +133,21 @@
             <div class="nm-row">
               <input placeholder="Node ID (e.g. 2)" class="nm-node-id">
               <input placeholder="Input name (e.g. prompt)" class="nm-name">
+              <select class="nm-kind" title="Semantic type — tells Toonflow vendor how to fill this field">
+                <option value="prompt">prompt</option>
+                <option value="negative">negative</option>
+                <option value="image">image</option>
+                <option value="firstFrame">firstFrame</option>
+                <option value="lastFrame">lastFrame</option>
+                <option value="multiImage">multiImage</option>
+                <option value="video">video</option>
+                <option value="audio">audio</option>
+                <option value="other" selected>other</option>
+              </select>
               <button type="button" class="secondary" onclick="addNmRow()">+</button>
             </div>
           </div>
-          <p style="font-size:0.72rem;color:#94a3b8;margin-top:0.3rem;">Tip: click "Get Workflow" then "Apply Inputs" to auto-fill from the workflow JSON.</p>
+          <p style="font-size:0.72rem;color:#94a3b8;margin-top:0.3rem;">Tip: click "Get Workflow" then "Apply Inputs" to auto-fill from the workflow JSON. Set <b>kind</b> so Toonflow can map fields automatically.</p>
         </div>
         <div style="margin-top:0.9rem;">
           <button type="submit" class="save">💾 Save Model</button>
@@ -276,13 +289,19 @@ function highlight(json) {
 }
 
 // ── Node mapping builder ─────────────────────────────────
-function addNmRow(nodeId, name) {
+const KIND_OPTIONS = ['prompt','negative','image','firstFrame','lastFrame','multiImage','video','audio','other'];
+function addNmRow(nodeId, name, kind) {
   const builder = $('node-mapping-builder');
   const row = document.createElement('div');
   row.className = 'nm-row';
+  const kindVal = KIND_OPTIONS.includes(kind) ? kind : 'other';
+  const kindOptions = KIND_OPTIONS.map(k =>
+    `<option value="${k}"${k === kindVal ? ' selected' : ''}>${k}</option>`
+  ).join('');
   row.innerHTML = `
     <input placeholder="Node ID" class="nm-node-id" value="${esc(nodeId || '')}">
     <input placeholder="Input name" class="nm-name" value="${esc(name || '')}">
+    <select class="nm-kind" title="Semantic type — tells Toonflow how to fill this field">${kindOptions}</select>
     <button type="button" class="danger" onclick="this.parentElement.remove()">✕</button>`;
   builder.appendChild(row);
 }
@@ -293,13 +312,17 @@ function getNodeMapping() {
   rows.forEach(row => {
     const nodeId = row.querySelector('.nm-node-id').value.trim();
     const name = row.querySelector('.nm-name').value.trim();
-    if (nodeId && name) mapping[nodeId] = { name };
+    const kindEl = row.querySelector('.nm-kind');
+    const kind = kindEl ? kindEl.value : 'other';
+    if (nodeId && name) mapping[nodeId] = { name, kind };
   });
   return mapping;
 }
 function setNodeMapping(mapping) {
   $('node-mapping-builder').innerHTML = '';
-  Object.entries(mapping).forEach(([nodeId, spec]) => addNmRow(nodeId, spec.name));
+  Object.entries(mapping).forEach(([nodeId, spec]) =>
+    addNmRow(nodeId, spec.name, spec.kind || 'other')
+  );
   if (Object.keys(mapping).length === 0) addNmRow();
 }
 
@@ -393,6 +416,21 @@ function renderInputNodes(data) {
   }
 }
 
+// Heuristic: guess the semantic kind of a ComfyUI input name.
+// Best-effort — user can always override via the dropdown.
+function guessKind(inputName) {
+  const n = (inputName || '').toLowerCase();
+  if (/^(prompt|text|pos(itive)?_?prompt|description|caption)$/.test(n)) return 'prompt';
+  if (/^(negative|neg(ative)?_?prompt|neg_?prompt)$/.test(n)) return 'negative';
+  if (/(first[_\s]?frame|start[_\s]?frame|frame[_\s]?0|input[_\s]?image)/.test(n)) return 'firstFrame';
+  if (/(last[_\s]?frame|end[_\s]?frame|frame[_\s]?1|output[_\s]?image)/.test(n)) return 'lastFrame';
+  if (/(images|image[_\s]?(refs?|list|inputs?)|refs?(erence)?[_\s]?images?)/.test(n)) return 'multiImage';
+  if (/(image|img|picture|photo)/.test(n)) return 'image';
+  if (/(video|clip|movie)/.test(n)) return 'video';
+  if (/(audio|sound|voice|music)/.test(n)) return 'audio';
+  return 'other';
+}
+
 // Apply a single node's inputs as node mapping entries
 function applyNodeFromWF(nodeId, btn) {
   const row = btn.closest('.wf-node');
@@ -404,7 +442,7 @@ function applyNodeFromWF(nodeId, btn) {
     const existing = document.querySelectorAll('.nm-name');
     const values = Array.from(existing).map(el => el.value.trim());
     if (!values.includes(inputName)) {
-      addNmRow(nodeId, inputName);
+      addNmRow(nodeId, inputName, guessKind(inputName));
     }
   });
 }
@@ -416,7 +454,7 @@ function applyNodeMapping() {
   rows.forEach(row => {
     const nodeId = row.dataset.nodeId;
     const inputs = JSON.parse(row.dataset.inputs || '[]');
-    inputs.forEach(inputName => addNmRow(nodeId, inputName));
+    inputs.forEach(inputName => addNmRow(nodeId, inputName, guessKind(inputName)));
   });
 }
 

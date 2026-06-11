@@ -190,6 +190,16 @@ export default async (knex: Knex): Promise<void> => {
   if (Number(toonflowVer) < 3.2) {
     u.vendor.writeCode("toonflow", vendorData["toonflow.ts"]);
   }
+  // Seed / upgrade runninghub vendor (cold-start safe via try/catch)
+  try {
+    const runninghubVer = await u.vendor.getVendor("runninghub").version;
+    if (Number(runninghubVer) < 2.0) {
+      u.vendor.writeCode("runninghub", vendorData["runninghub.ts"]);
+    }
+  } catch {
+    // Vendor doesn't exist yet — write the file so tempOnsert can seed it
+    u.vendor.writeCode("runninghub", vendorData["runninghub.ts"]);
+  }
 };
 
 async function tempOnsert(tsCode: string) {
