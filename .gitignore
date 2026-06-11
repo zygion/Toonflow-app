@@ -58,6 +58,7 @@ rh-rest-api/.env
 venv/
 env/
 virtualenv/
+rh-rest-api/outputs/*
 
 router.ts
 

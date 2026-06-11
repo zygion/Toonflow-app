@@ -26,7 +26,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from config import Config, get_config
@@ -158,6 +158,13 @@ def rh_client() -> RunningHub:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+import os
+
+@app.get("/ui")
+async def ui():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "ui.html"), media_type="text/html")
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +365,7 @@ async def get_task_by_rh(rh_task_id: str):
 @app.get("/workflow/{workflow_id}/json")
 async def get_workflow_json(workflow_id: str):
     """Fetch the node skeleton for a RunningHub workflow."""
+    print(f"Fetching workflow JSON for {workflow_id} from RunningHub...")
     try:
         wf = rh_client().get_workflow_json(workflow_id)
         return JSONResponse(wf)

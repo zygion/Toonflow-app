@@ -134,11 +134,12 @@ def _check_task(task: dict, client: RunningHub, output_base: Path, db_path: str)
 
         # Optionally download files
         for out in results:
-            file_url = out.fileUrl or ""
+            file_url = out.get("fileUrl") or ""
             if not file_url:
                 continue
-            file_type = out.fileType or "bin"
-            filename = f"{rh_id}_{out.nodeId}.{file_type}"
+            file_type = out.get("fileType") or "bin"
+            node_id = out.get("nodeId") or "0"
+            filename = f"{rh_id}_{node_id}.{file_type}"
             download_file(file_url, output_base / filename)
             log.info("  [%s] downloaded %s", rh_id, filename)
 

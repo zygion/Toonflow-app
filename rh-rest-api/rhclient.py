@@ -53,15 +53,15 @@ class TaskOutput:
     fileType: str
     taskCostTime: str
     nodeId: str
-    thirdPartyConsumeMoney: str
-    consumeMoney: str
+    thirdPartyConsumeMoney: Optional[str]
+    consumeMoney: Optional[str]
     consumeCoins: str
 
 
 @dataclass
 class RunningHubConfig:
-    baseUrl: str
-    apiKey: str
+    base_url: str
+    api_key: str
 
 
 # ---------------------------------------------------------------------------
@@ -70,8 +70,8 @@ class RunningHubConfig:
 
 class RunningHub:
     def __init__(self, config: RunningHubConfig):
-        self.base_url = config.baseUrl.rstrip("/")
-        self.api_key = config.apiKey
+        self.base_url = config.base_url.rstrip("/")
+        self.api_key = config.api_key
 
     def _headers(self) -> dict[str, str]:
         parsed = urllib.parse.urlparse(self.base_url)
@@ -132,8 +132,10 @@ class RunningHub:
         body = {"apiKey": self.api_key, "taskId": task_id}
         data = self._post("/task/openapi/status", body)
         status = data.get("data")
+        # data can be a string directly: "QUEUED", "RUNNING", "FAILED", "SUCCESS"
         if isinstance(status, str):
             return TaskStatus(status)
+        # or a dict with a "status" key
         if isinstance(status, dict) and status.get("status"):
             return TaskStatus(status["status"])
         raise RuntimeError(f"Unexpected status response: {data}")
@@ -141,7 +143,13 @@ class RunningHub:
     def get_task_outputs(self, task_id: str) -> list[TaskOutput]:
         body = {"apiKey": self.api_key, "taskId": task_id}
         data = self._post("/task/openapi/outputs", body)
-        return [TaskOutput(**o) for o in (data.get("data") or [])]
+        raw_list = data.get("data") or []
+        outputs = []
+        for o in raw_list:
+            # Normalise null -> None so Optional fields don't crash dataclass
+            cleaned = {k: (None if v is None else v) for k, v in o.items()}
+            outputs.append(TaskOutput(**cleaned))
+        return outputs
 
     def get_workflow_json(self, workflow_id: str) -> dict:
         body = {"apiKey": self.api_key, "workflowId": workflow_id}
